@@ -1,3 +1,6 @@
+use iced_widget::text;
+use crate::iced::widget::text;
+use bevy_iced::iced::widget::text;
 use bevy::prelude::*;
 use bevy_iced::iced::widget::text;
 use bevy_iced::{IcedContext, IcedPlugin};

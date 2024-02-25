@@ -4,6 +4,7 @@ use bevy_ecs::{
     system::{Commands, Res, Resource},
     world::World,
 };
+use bevy_render::render_graph::RenderLabel;
 use bevy_render::renderer::{RenderDevice, RenderQueue};
 use bevy_render::{
     render_graph::{Node, NodeRunError, RenderGraphContext},
@@ -19,7 +20,8 @@ use std::sync::Mutex;
 
 use crate::{DidDraw, IcedProps, IcedResource, IcedSettings};
 
-pub const ICED_PASS: &str = "bevy_iced_pass";
+#[derive(RenderLabel, Clone, Eq, Hash, Debug, PartialEq)]
+pub struct BevyIcedRenderLabel;
 
 #[derive(Resource, Deref, DerefMut, Clone)]
 pub struct ViewportResource(pub Viewport);
@@ -30,7 +32,9 @@ pub(crate) fn update_viewport(
     mut commands: Commands,
 ) {
     let window = windows.single();
-    let scale_factor = iced_settings.scale_factor.unwrap_or(window.scale_factor());
+    let scale_factor = iced_settings
+        .scale_factor
+        .unwrap_or(window.scale_factor().into());
     let viewport = Viewport::with_physical_size(
         Size::new(window.physical_width(), window.physical_height()),
         scale_factor,
@@ -89,7 +93,9 @@ impl Node for IcedNode {
         let IcedProps {
             renderer, debug, ..
         } = &mut *world.resource::<IcedResource>().lock().unwrap();
-        let crate::Renderer::Wgpu(renderer) = renderer else { return Ok(()) };
+        let crate::Renderer::Wgpu(renderer) = renderer else {
+            return Ok(());
+        };
         let render_device = world.resource::<RenderDevice>().wgpu_device();
         let render_queue = world.resource::<RenderQueue>();
         let viewport = world.resource::<ViewportResource>();
@@ -102,6 +108,7 @@ impl Node for IcedNode {
             return Ok(());
         }
         let view = extracted_window.swap_chain_texture_view.as_ref().unwrap();
+        let format = extracted_window.swap_chain_texture_format.unwrap();
         let staging_belt = &mut *self.staging_belt.lock().unwrap();
 
         renderer.with_primitives(|backend, primitives| {
@@ -110,6 +117,7 @@ impl Node for IcedNode {
                 render_queue,
                 render_context.command_encoder(),
                 None,
+                format,
                 view,
                 primitives,
                 viewport,

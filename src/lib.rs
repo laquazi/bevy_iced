@@ -34,17 +34,17 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use crate::render::{extract_iced_data, IcedNode, ViewportResource};
+use crate::render::{extract_iced_data, BevyIcedRenderLabel, IcedNode, ViewportResource};
 
 use bevy_app::{App, Plugin, Update};
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::{EventWriter, Query, With};
 use bevy_ecs::system::{NonSendMut, Res, ResMut, Resource, SystemParam};
 use bevy_input::touch::Touches;
-use bevy_render::render_graph::RenderGraph;
+use bevy_render::render_graph::{RenderGraph};
 use bevy_render::renderer::{RenderDevice, RenderQueue};
 use bevy_render::{ExtractSchedule, RenderApp};
-use bevy_utils::HashMap;
+use bevy_utils::{HashMap};
 use bevy_window::{PrimaryWindow, Window};
 use iced_core::mouse::Cursor;
 use iced_runtime::user_interface::UserInterface;
@@ -55,6 +55,7 @@ use iced_widget::graphics::Viewport;
 ///
 /// This module attempts to emulate the `iced` package's API
 /// as much as possible.
+#[allow(hidden_glob_reexports)]
 pub mod iced;
 
 mod conversions;
@@ -62,10 +63,11 @@ mod render;
 mod systems;
 mod utils;
 
+use crate::iced::Theme;
 use systems::IcedEventQueue;
 
 /// The default renderer.
-pub type Renderer = iced_renderer::Renderer<iced::Theme>;
+pub type Renderer = iced_renderer::Renderer;
 
 /// The main feature of `bevy_iced`.
 /// Add this to your [`App`] by calling `app.add_plugin(bevy_iced::IcedPlugin::default())`.
@@ -127,7 +129,11 @@ impl IcedProps {
         }
 
         Self {
-            renderer: Renderer::Wgpu(iced_wgpu::Renderer::new(backend)),
+            renderer: Renderer::Wgpu(iced_wgpu::Renderer::new(
+                backend,
+                config.settings.default_font,
+                config.settings.default_text_size,
+            )),
             debug: iced_runtime::Debug::new(),
             clipboard: iced_core::clipboard::Null,
         }
@@ -150,12 +156,9 @@ impl From<IcedProps> for IcedResource {
 }
 
 fn setup_pipeline(graph: &mut RenderGraph) {
-    graph.add_node(render::ICED_PASS, IcedNode::new());
+    graph.add_node(BevyIcedRenderLabel, IcedNode::new());
 
-    graph.add_node_edge(
-        bevy_render::main_graph::node::CAMERA_DRIVER,
-        render::ICED_PASS,
-    );
+    graph.add_node_edge(bevy_render::graph::CameraDriverLabel, BevyIcedRenderLabel);
 }
 
 #[derive(Default)]
@@ -180,7 +183,7 @@ pub struct IcedSettings {
     /// Setting this to `None` defaults to using the `Window`s scale factor.
     pub scale_factor: Option<f64>,
     /// The theme to use for rendering Iced elements.
-    pub theme: iced_widget::style::Theme,
+    pub theme: Theme,
     /// The style to use for rendering Iced elements.
     pub style: iced::Style,
 }
@@ -196,7 +199,7 @@ impl Default for IcedSettings {
     fn default() -> Self {
         Self {
             scale_factor: None,
-            theme: iced_widget::style::Theme::Dark,
+            theme: Theme::Dark,
             style: iced::Style {
                 text_color: iced_core::Color::WHITE,
             },
@@ -233,7 +236,10 @@ pub struct IcedContext<'w, 's, Message: bevy_ecs::event::Event> {
 
 impl<'w, 's, M: bevy_ecs::event::Event> IcedContext<'w, 's, M> {
     /// Display an [`Element`] to the screen.
-    pub fn display<'a>(&'a mut self, element: impl Into<iced_core::Element<'a, M, Renderer>>) {
+    pub fn display<'a>(
+        &'a mut self,
+        element: impl Into<iced_core::Element<'a, M, Theme, Renderer>>,
+    ) {
         let IcedProps {
             ref mut renderer,
             ref mut clipboard,
@@ -267,7 +273,9 @@ impl<'w, 's, M: bevy_ecs::event::Event> IcedContext<'w, 's, M> {
             &mut messages,
         );
 
-        messages.into_iter().for_each(|msg| self.messages.send(msg));
+        messages.into_iter().for_each(|msg| {
+            self.messages.send(msg);
+        });
 
         ui.draw(renderer, &self.settings.theme, &self.settings.style, cursor);
 
